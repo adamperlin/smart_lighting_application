@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.google.sample.cloudvision;
+package com.nanosoft.sample.smartlightingcamera;
 
 import android.Manifest;
 import android.content.Intent;
@@ -26,22 +26,19 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.support.annotation.NonNull;
-import android.support.design.widget.FloatingActionButton;
 import android.support.v4.content.FileProvider;
-import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.Toolbar;
 import android.util.Log;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.api.client.extensions.android.http.AndroidHttp;
+import com.google.api.client.googleapis.auth.oauth2.GoogleCredential;
 import com.google.api.client.googleapis.json.GoogleJsonResponseException;
 import com.google.api.client.http.HttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
+
 import com.google.api.services.vision.v1.Vision;
 import com.google.api.services.vision.v1.VisionRequest;
 import com.google.api.services.vision.v1.VisionRequestInitializer;
@@ -51,17 +48,30 @@ import com.google.api.services.vision.v1.model.BatchAnnotateImagesResponse;
 import com.google.api.services.vision.v1.model.EntityAnnotation;
 import com.google.api.services.vision.v1.model.Feature;
 import com.google.api.services.vision.v1.model.Image;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutput;
+import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
-import java.net.URI;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+
+import javax.xml.transform.Result;
 
 public class MainActivity extends AppCompatActivity {
     private static final String CLOUD_VISION_API_KEY = BuildConfig.API_KEY;
@@ -78,11 +88,8 @@ public class MainActivity extends AppCompatActivity {
     public static final int CAMERA_PERMISSIONS_REQUEST = 2;
     public static final int CAMERA_IMAGE_REQUEST = 3;
 
-    private TextView mImageDetails;
-    private ImageView mMainImage;
-
     Camera mCamera;
-     CameraPreview mPreview;
+    CameraPreview mPreview;
 
     private boolean safeCameraOpen(int id) {
         boolean qOpened = false;
@@ -91,7 +98,7 @@ public class MainActivity extends AppCompatActivity {
             mCamera = Camera.open(id);
             qOpened = (mCamera != null);
         } catch (Exception e) {
-            Log.e("Camera##","failed to open Camera");
+            Log.e("Camera","failed to open Camera");
             e.printStackTrace();
         }
 
@@ -120,11 +127,10 @@ public class MainActivity extends AppCompatActivity {
             }
 
             Uri uri = FileProvider.getUriForFile(MainActivity.this, getApplicationContext().getPackageName() + ".provider", getCameraFile());
-
             Log.d("URI: ", uri.toString());
-
             uploadImage(uri);
 
+            // restart the preview
             mCamera.startPreview();
         }
     };
@@ -173,24 +179,9 @@ public class MainActivity extends AppCompatActivity {
 
 
         mPreview = new CameraPreview(getBaseContext(), mCamera, pictureCallback);
-       // mPreview.setCameraPreviewCallback(cameraPreviewCallback);
 
-        mImageDetails = findViewById(R.id.image_details);
-        mMainImage = findViewById(R.id.main_image);
-
-        FrameLayout preview = (FrameLayout) findViewById(R.id.camera_preview);
+        FrameLayout preview = findViewById(R.id.camera_preview);
         preview.addView(mPreview);
-
-
-
-       /* for (int i = 0; i < 10; i++) {
-            mCamera.takePicture(null, null, pictureCallback);
-        }*/
-
-        //while (!mPreview.canTakePicture());
-       // mCamera.takePicture(null, null, pictureCallback);
-
-       // mCamera.takePicture()
     }
 
     public void startGalleryChooser() {
@@ -214,26 +205,12 @@ public class MainActivity extends AppCompatActivity {
             intent.putExtra(MediaStore.EXTRA_OUTPUT, photoUri);
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             startActivityForResult(intent, CAMERA_IMAGE_REQUEST);
-        } else {
-
         }
     }
 
     public File getCameraFile() {
         File dir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
         return new File(dir, FILE_NAME);
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-
-        if (requestCode == GALLERY_IMAGE_REQUEST && resultCode == RESULT_OK && data != null) {
-            uploadImage(data.getData());
-        } else if (requestCode == CAMERA_IMAGE_REQUEST && resultCode == RESULT_OK) {
-            Uri photoUri = FileProvider.getUriForFile(this, getApplicationContext().getPackageName() + ".provider", getCameraFile());
-            uploadImage(photoUri);
-        }
     }
 
     @Override
@@ -255,7 +232,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
-
     public void uploadImage(Uri uri) {
         if (uri != null) {
             try {
@@ -266,8 +242,6 @@ public class MainActivity extends AppCompatActivity {
                                 MAX_DIMENSION);
 
                 callCloudVision(bitmap);
-               // mMainImage.setImageBitmap(bitmap);
-
             } catch (IOException e) {
                 Log.d(TAG, "Image picking failed because " + e.getMessage());
                 Toast.makeText(this, R.string.image_picker_error, Toast.LENGTH_LONG).show();
@@ -278,16 +252,39 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private Vision.Images.Annotate prepareAnnotationRequest(Bitmap bitmap) throws IOException {
-        HttpTransport httpTransport = AndroidHttp.newCompatibleTransport();
-        JsonFactory jsonFactory = GsonFactory.getDefaultInstance();
 
-        VisionRequestInitializer requestInitializer =
+    private class ImageLocalizationRequest {
+
+    }
+
+
+    private static String jsonRequestString = "{\n      \'requests\': [\n        {\n          \'image\': {\n              \'content\': \'%s\',\n          },\n          \'features\': [\n            {\n              \'type\': \'OBJECT_LOCALIZATION\'\n            }\n          ]\n        }\n      ]\n    }";
+
+
+    private String prepareAnnotationRequest(Bitmap bitmap) {
+ //       HttpTransport httpTransport = AndroidHttp.newCompatibleTransport();
+   //     JsonFactory jsonFactory = GsonFactory.getDefaultInstance();
+
+
+
+
+//        Image base64EncodedImage = new Image();
+        // Convert the bitmap to a JPEG
+        // Just in case it's a format that Android understands but Cloud Vision
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, byteArrayOutputStream);
+        byte[] imageBytes = byteArrayOutputStream.toByteArray();
+
+        String base64String = com.google.api.client.util.Base64.encodeBase64URLSafeString(imageBytes);
+        String finalRequest = String.format(jsonRequestString, base64String);
+
+
+
+
+        /*
+         VisionRequestInitializer requestInitializer =
                 new VisionRequestInitializer(CLOUD_VISION_API_KEY) {
-                    /**
-                     * We override this so we can inject important identifying fields into the HTTP
-                     * headers. This enables use of a restricted cloud platform API key.
-                     */
+
                     @Override
                     protected void initializeVisionRequest(VisionRequest<?> visionRequest)
                             throws IOException {
@@ -301,6 +298,7 @@ public class MainActivity extends AppCompatActivity {
                         visionRequest.getRequestHeaders().set(ANDROID_CERT_HEADER, sig);
                     }
                 };
+
 
         Vision.Builder builder = new Vision.Builder(httpTransport, jsonFactory, null);
         builder.setVisionRequestInitializer(requestInitializer);
@@ -327,7 +325,7 @@ public class MainActivity extends AppCompatActivity {
             // add the features we want
             annotateImageRequest.setFeatures(new ArrayList<Feature>() {{
                 Feature labelDetection = new Feature();
-                labelDetection.setType("LABEL_DETECTION");
+                labelDetection.setType("OBJECT_LOCALIZATION");
                 labelDetection.setMaxResults(MAX_LABEL_RESULTS);
                 add(labelDetection);
             }});
@@ -340,42 +338,100 @@ public class MainActivity extends AppCompatActivity {
                 vision.images().annotate(batchAnnotateImagesRequest);
         // Due to a bug: requests to Vision API containing large images fail when GZipped.
         annotateRequest.setDisableGZipContent(true);
-        Log.d(TAG, "created Cloud Vision request object, sending request");
+        Log.d(TAG, "created Cloud Vision request object, sending request");*/
 
-        return annotateRequest;
+        return finalRequest;
     }
 
-    private static class LableDetectionTask extends AsyncTask<Object, Void, String> {
+    private static class LabelDetectionTask extends AsyncTask<Object, Void, JSONObject> {
         private final WeakReference<MainActivity> mActivityWeakReference;
-        private Vision.Images.Annotate mRequest;
+        private String mRequest;
 
-        LableDetectionTask(MainActivity activity, Vision.Images.Annotate annotate) {
+        LabelDetectionTask(MainActivity activity, String annotateRequest) {
             mActivityWeakReference = new WeakReference<>(activity);
-            mRequest = annotate;
+            mRequest = annotateRequest;
         }
 
         @Override
-        protected String doInBackground(Object... params) {
+        protected JSONObject doInBackground(Object... params) {
+            String cloudVisionLocalizationURL = String.format("https://vision.googleapis.com/v1/images:annotate?key=%s", CLOUD_VISION_API_KEY);
+
+            try {
+                URL url = new URL(cloudVisionLocalizationURL);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                conn.setRequestProperty("Accept", "application/json");
+
+                conn.setDoOutput(true);
+                conn.setDoInput(true);
+
+                DataOutputStream os = new DataOutputStream(conn.getOutputStream());
+
+                os.writeBytes(mRequest);
+
+                os.flush();
+                os.close();
+
+                int code = conn.getResponseCode();
+
+                if (code != 200) {
+                    throw new IOException("Bad request");
+                }
+
+                Log.d("REQUEST STATUS: ", String.valueOf(conn.getResponseCode()));
+                Log.d("MSG:", conn.getResponseMessage());
+                DataInputStream dis = new DataInputStream(conn.getInputStream());
+
+
+                StringBuilder responseData = new StringBuilder();
+                String tmp;
+                while ((tmp = dis.readLine()) != null) {
+                    responseData.append(tmp);
+                }
+
+                dis.close();
+                Log.d("BODY: ", responseData.toString());
+
+                JSONObject jsonResponse = new JSONObject(responseData.toString());
+                return jsonResponse;
+
+            } catch (IOException e) {
+                Log.d(TAG, "failed to make api request because " + e.getMessage());
+            } catch (JSONException e) {
+                Log.d(TAG, "bad json response");
+            }
+
+            /*
             try {
                 Log.d(TAG, "created Cloud Vision request object, sending request");
                 BatchAnnotateImagesResponse response = mRequest.execute();
-                return convertResponseToString(response);
+                return response;
 
             } catch (GoogleJsonResponseException e) {
                 Log.d(TAG, "failed to make API request because " + e.getContent());
             } catch (IOException e) {
                 Log.d(TAG, "failed to make API request because of other IOException " +
                         e.getMessage());
-            }
-            return "Cloud Vision API request failed. Check logs for details.";
+            }*/
+            return null;
         }
 
-        protected void onPostExecute(String result) {
+        protected void onPostExecute(JSONObject result) {
             MainActivity activity = mActivityWeakReference.get();
             if (activity != null && !activity.isFinishing()) {
-                TextView imageDetail = activity.findViewById(R.id.image_details);
-                Log.d("RESULT!", result);
-               // imageDetail.setText(result);
+               // Log.d("RESULT!", result);
+              //  ResultsProcessor resultsProcessor = new ResultsProcessor(result);
+              //  resultsProcessor.processResults();
+               // TODO:
+                // ProcessResult and send
+
+                ResultsProcessor resultsProcessor = new ResultsProcessor(result);
+                try {
+                    resultsProcessor.processResults();
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
             }
         }
     }
@@ -385,13 +441,8 @@ public class MainActivity extends AppCompatActivity {
         //mImageDetails.setText(R.string.loading_message);
 
         // Do the real work in an async task, because we need to use the network anyway
-        try {
-            AsyncTask<Object, Void, String> labelDetectionTask = new LableDetectionTask(this, prepareAnnotationRequest(bitmap));
-            labelDetectionTask.execute();
-        } catch (IOException e) {
-            Log.d(TAG, "failed to make API request because of other IOException " +
-                    e.getMessage());
-        }
+        AsyncTask<Object, Void, JSONObject> labelDetectionTask = new LabelDetectionTask(this, prepareAnnotationRequest(bitmap));
+        labelDetectionTask.execute();
     }
 
     private Bitmap scaleBitmapDown(Bitmap bitmap, int maxDimension) {
@@ -414,6 +465,7 @@ public class MainActivity extends AppCompatActivity {
         return Bitmap.createScaledBitmap(bitmap, resizedWidth, resizedHeight, false);
     }
 
+    /*
     private static String convertResponseToString(BatchAnnotateImagesResponse response) {
         StringBuilder message = new StringBuilder("I found these things:\n\n");
 
@@ -428,5 +480,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         return message.toString();
-    }
+    }*/
 }
+
+

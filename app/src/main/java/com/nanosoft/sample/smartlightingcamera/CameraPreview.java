@@ -1,4 +1,4 @@
-package com.google.sample.cloudvision;
+package com.nanosoft.sample.smartlightingcamera;
 import android.content.Context;
 import android.hardware.Camera;
 import android.util.Log;

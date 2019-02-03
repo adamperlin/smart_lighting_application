@@ -1,4 +1,5 @@
-package com.google.sample.cloudvision;
+package com.nanosoft.sample.smartlightingcamera;
+
 
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;

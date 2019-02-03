@@ -5,7 +5,7 @@ android {
     buildToolsVersion "27.0.3"
 
     defaultConfig {
-        applicationId "com.google.sample.cloudvision"
+        applicationId "com.nanosoft.sample.smartlightingcamera"
         minSdkVersion 24
         targetSdkVersion 27
         versionCode 1
@@ -46,4 +46,5 @@ dependencies {
     compile 'com.google.api-client:google-api-client-android:1.23.0' exclude module: 'httpclient'
     compile 'com.google.http-client:google-http-client-gson:1.23.0' exclude module: 'httpclient'
     compile 'com.google.apis:google-api-services-vision:v1-rev369-1.23.0'
+    //compile 'com.google.cloud:google-cloud-vision:1.59.0'
 }
